@@ -5,6 +5,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from src.utils import *
 
 class SynDataset(Dataset):
     """
@@ -17,37 +18,45 @@ class SynDataset(Dataset):
         transform (callable, optional): Optional transform to be applied to the image. Defaults to None.
     
     """
-    def __init__(self, obj_name, root_dir, split='train', transform=None, min_max=None):
+    def __init__(self, obj_name, root_dir, split='train', img_size=400, min_max=None, num_points=64):
         assert split in ['train', 'val', 'test'], "Invalid split, options are: train, val, test"
         data_folder = os.path.join(root_dir, "data", "nerf_synthetic", obj_name)
         json_file = os.path.join(data_folder, f"transforms_{split}.json")
         with open(json_file, 'r') as file:
             self.data = json.load(file)
         self.root_dir = data_folder
-        self.transform = transform
-        
+
+        self.num_points = num_points
+
+        self.transform = transforms.Compose([
+            transforms.Resize((img_size, img_size))]
+            )
+        self.camera_angle_x = self.data['camera_angle_x']
+        self.camera_angle_x = torch.tensor(self.camera_angle_x)
+        self.focal_length = 0.5 * img_size / torch.tan(0.5 * self.camera_angle_x)
         #store all data in tensors
         self.images = []
-        self.scene_5d = []
+        self.transform_matrices = []
+
         for frame in self.data['frames']:
             img_path = frame['file_path'][2:] + '.png'
             img_path = os.path.join(self.root_dir, img_path,)
+            # print(img_path)
             image = Image.open(img_path)
-            image = transforms.ToTensor()(image)
+            image = transforms.ToTensor()(image)[:3] #shape: (C , img_size, img_size)
             self.images.append(image)
+   
 
             # Extract camera parameters
             transform_matrix = torch.tensor(frame['transform_matrix'])
-            position = transform_matrix[:3, 3]
-            z_axis = -transform_matrix[:3, 2]  # Negative z-axis is the viewing direction
-            theta = torch.arctan2(z_axis[1], z_axis[0])
-            phi = torch.arccos(z_axis[2])
-            scene_5d = torch.cat([position, theta.view(1), phi.view(1)])
-            self.scene_5d.append(scene_5d)
+            self.transform_matrices.append(transform_matrix)
 
-        self.images = torch.stack(self.images)
+        self.images = torch.stack(self.images) #shape: (num_frames, 3, img_size, img_size)
         self.images = self.transform(self.images)
-        self.scene_5d = torch.stack(self.scene_5d)
+
+        self.transform_matrices = torch.stack(self.transform_matrices) #shape: (num_frames, 4, 4)
+        self.rotations = self.transform_matrices[:, :3, :3] #shape: (num_frames, 3, 3)
+        self.locations = self.transform_matrices[:, :3, 3].view(-1, 3) #shape: (num_frames, 3)
         
         self.min_max = None
 
@@ -55,17 +64,11 @@ class SynDataset(Dataset):
             self.min_max = min_max
         else:
             self.min_max = torch.zeros((2, 3))
-            self.min_max[0] = torch.min(self.scene_5d, dim=0)[0][:3]
-            self.min_max[1] = torch.max(self.scene_5d, dim=0)[0][:3]
+            self.min_max[0] = torch.min(self.locations, dim=0)[0]
+            self.min_max[1] = torch.max(self.locations, dim=0)[0]
 
         #normalize x, y, z to [-1, 1]
-        self.scene_5d[:, :3] = (self.scene_5d[:, :3] - self.min_max[0]) / (self.min_max[1] - self.min_max[0])*2 - 1
-
-    
-    
-
-
-
+        self.locations = (self.locations - self.min_max[0]) / (self.min_max[1] - self.min_max[0])*2 - 1
         
 
     def __len__(self):
@@ -90,10 +93,18 @@ class SynDataset(Dataset):
 
         """
         
+        rays_o, rays_d = get_rays(self.images[idx], self.locations[idx], self.rotations[idx], self.focal_length)
+        points, z_vals = sample_points(rays_o, rays_d, self.num_points)
+
+        v_dir = dir_to_euler(rays_d)
 
         sample = {
-            'image': self.images[idx],
-            'scene_5d': self.scene_5d[idx]
+            'img': self.images[idx], #shape: [C, H, W]
+            # 'rays_o': rays_o, #shape: [H * W, 3]
+            # 'rays_d': rays_d, #shape: [H * W, 3]
+            'points': points, #shape: [H * W, N_samples, 3]
+            'z_vals': z_vals, #shape: [H * W * N_samples, 1]
+            'v_dir': v_dir, #shape: [H * W, 2]
         }
 
         return sample
