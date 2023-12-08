@@ -2,12 +2,16 @@ import torch
 
 def get_rays(image, camera_pos, camera_rot, focal_length):
     """
-    Calculate the origin and direction of the ray for each pixel in the image 
-    :param image: The input image. [C, H, W]
-    :param camera_pos: Camera position as a PyTorch tensor. [3]
-    :param camera_rot: Camera rotation matrix as a PyTorch tensor. [3, 3]
-    :param focal_length: Focal length of the camera.
-    :return: rays_o (ray origins), rays_d (ray directions) [H * W, 3]
+    Calculate the origin and direction of the ray for each pixel in the image.
+
+    Args:
+        image: The input image. [C, H, W]
+        camera_pos: Camera position as a PyTorch tensor. [3]
+        camera_rot: Camera rotation matrix as a PyTorch tensor. [3, 3]
+        focal_length: Focal length of the camera.
+
+    Returns:
+        rays_o (ray origins), rays_d (ray directions) [H * W, 3]
     """
     C, H, W = image.shape  # image is a PyTorch tensor of shape [C, H, W]
 
@@ -40,11 +44,14 @@ def get_rays(image, camera_pos, camera_rot, focal_length):
 def sample_points(rays_o, rays_d, N_samples):
     """
     Sample points along the rays within a normalized bounding volume.
-    
-    :param rays_o: Ray origins. Shape: [H * W, 3]
-    :param rays_d: Ray directions. Shape: [H * W, 3]
-    :param N_samples: Number of samples to take along each ray.
-    :return: Sampled points and their corresponding depths (z values)
+
+    Args:
+        rays_o: Ray origins. Shape: [H * W, 3]
+        rays_d: Ray directions. Shape: [H * W, 3]
+        N_samples: Number of samples to take along each ray.
+
+    Returns:
+        Sampled points and their corresponding depths (z values)
     """
     # find length of each ray
     # find -1 or 1 for each ray by comparing the sign of the ray direction
@@ -85,8 +92,12 @@ def sample_points(rays_o, rays_d, N_samples):
 def dir_to_euler(ray_d):
     """
     Convert a direction vector to euler angles.
-    :param dir: Direction vector. Shape: [H * W, 3]
-    :return: Euler angles. Shape: [H * W, 2]
+
+    Args:
+        ray_d: Direction vector. Shape: [H * W, 3]
+    
+    Returns:
+        Euler angles (θ, φ) in radians. Shape: [H * W, 2]
     """
     x = ray_d[:, 0]
     y = ray_d[:, 1]
