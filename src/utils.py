@@ -112,4 +112,41 @@ def dir_to_euler(ray_d):
     return torch.stack([theta, phi], dim=1)  # shape: [H * W, 2]
     
 
+import torch
 
+def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
+    """
+    Volume rendering function for NeRF.
+
+    Args:
+        z_vals (torch.Tensor): Depths of the sampled points. Shape: [num_rays, num_samples]
+        rgb (torch.Tensor): Predicted RGB colors at sampled points. Shape: [num_rays, num_samples, 3]
+        sigma (torch.Tensor): Predicted densities (sigma) at sampled points. Shape: [num_rays, num_samples]
+        white_bkgd (bool): If True, render with a white background; otherwise, render with a black background.
+
+    Returns:
+        torch.Tensor: Rendered colors for each ray. Shape: [num_rays, 3]
+    """
+    # Calculate distances between adjacent samples along the ray
+    deltas = z_vals[:, 1:] - z_vals[:, :-1]
+    # The last delta is infinity
+    delta_inf = torch.Tensor([1e10]).expand_as(deltas[:, :1])  # Very large value
+    deltas = torch.cat([deltas, delta_inf], -1)
+
+    # Calculate the alpha value for each sample point
+    alpha = 1.0 - torch.exp(-sigma * deltas)
+    T = torch.cumprod(1.0 - alpha + 1e-10, -1)[:, :-1]
+    T = torch.cat([torch.ones_like(T[:, :1]), T], -1)  # [num_rays, num_samples]
+
+    # Calculate weights for RGB colors
+    weights = alpha * T
+
+    # Calculate the final color of each ray
+    rendered_rgb = (weights[:, :, None] * rgb).sum(dim=1)
+
+    # If white background is used, add the background color
+    if white_bkgd:
+        rendered_rgb += (1.0 - weights.sum(dim=1))[:, None]
+
+    return rendered_rgb
+    

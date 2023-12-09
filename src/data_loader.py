@@ -177,24 +177,15 @@ class SynDatasetRay(Dataset):
         self.locations = (self.locations - self.min_max[0]) / (self.min_max[1] - self.min_max[0])*2 - 1
 
         self.current_frame = 0
-        self.rays_o, self.rays_d = get_rays(self.images[self.current_frame], self.locations[self.current_frame], self.rotations[self.current_frame], self.focal_length)
+        self.rays_o, self.rays_d = get_rays(self.images[self.current_frame], 
+                                            self.locations[self.current_frame], 
+                                            self.rotations[self.current_frame], 
+                                            self.focal_length)
         self.points, self.z_vals = sample_points(self.rays_o, self.rays_d, self.num_points)
         self.v_dir = dir_to_euler(self.rays_d)
         self.current_img = self.images[self.current_frame].permute(1, 2, 0).view(-1, 3) #shape: [H * W, C]
 
 
-    def idx2frame(self, idx):
-        """
-        Converts the index of a sample to the corresponding frame.
-        
-        Args:
-            idx (int): Index of the sample.
-        
-        Returns:
-            int: Index of the frame.
-        """
-        return (idx + 1) // (self.image_size * self.image_size)
-    
 
     def __len__(self):
         """
@@ -203,7 +194,7 @@ class SynDatasetRay(Dataset):
         Returns:
             int: Total number of frames.
         """
-        return len(self.data['frames'] * self.image_size * self.image_size)
+        return len(self.data['frames']) * self.image_size * self.image_size
 
     def __getitem__(self, idx):
         """
@@ -217,25 +208,30 @@ class SynDatasetRay(Dataset):
 
         """
 
-        #check if we need to move to the next frame
-        if self.idx2frame(idx) != self.current_frame:
-            self.current_frame = self.idx2frame(idx)
-            
-            self.rays_o, self.rays_d = get_rays(self.images[self.current_frame], self.locations[self.current_frame], self.rotations[self.current_frame], self.focal_length)
+        frame_idx = idx // (self.image_size * self.image_size)
+        ray_idx = idx % (self.image_size * self.image_size)
+
+        # Only compute rays for a new frame
+        if frame_idx != self.current_frame:
+            # print('idx: ', idx)
+            # print("frame_idx: ", frame_idx)
+            self.current_frame = frame_idx
+            self.rays_o, self.rays_d = get_rays(self.images[self.current_frame], 
+                                                self.locations[self.current_frame], 
+                                                self.rotations[self.current_frame], 
+                                                self.focal_length)
             self.points, self.z_vals = sample_points(self.rays_o, self.rays_d, self.num_points)
             self.v_dir = dir_to_euler(self.rays_d)
-            self.current_img = self.images[self.current_frame].permute(1, 2, 0).view(-1, 3) #shape: [H * W, C]
-
-        #get the index of the ray
-        ray_idx = idx % (self.image_size * self.image_size)
+            self.current_img = self.images[self.current_frame].permute(1, 2, 0).view(-1, 3) # Reshape to [H * W, C]
+            
 
         sample = {
             'rays_o': self.rays_o[ray_idx], #shape: [3]
             'rays_d': self.rays_d[ray_idx], #shape: [3]
-            'points': self.points[ray_idx], #shape: [N_samples, 3]
-            'z_vals': self.z_vals[ray_idx], #shape: [N_samples, 1]
-            'v_dir': self.v_dir[ray_idx], #shape: [2]
-            'img': self.current_img[ray_idx] #shape: [C]
+            'points': self.points[ray_idx],
+            'z_vals': self.z_vals[ray_idx],
+            'v_dir': self.v_dir[ray_idx],
+            'img': self.current_img[ray_idx]
         }
 
         return sample
