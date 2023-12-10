@@ -135,7 +135,7 @@ class NeRFTrainer:
                 if patience_counter >= early_stopping_patience:
                     print(f"Early stopping at epoch {epoch+1}")
                     break
-``
+
             # Update learning rate and log progress
             self.lr_scheduler.step()
             if epoch % log_interval == 0:
