@@ -5,7 +5,7 @@ from datetime import datetime
 from src.utils import *
 
 class NeRFTrainer:
-    def __init__(self, model, optimizer, lr_scheduler, loss_fn, train_loader, val_loader, device, wandb_run=None):
+    def __init__(self, model, optimizer, lr_scheduler, loss_fn, train_loader, val_loader, device, wandb_run=None, obj_name="chair"):
         """
         NeRF trainer with validation, checkpoint saving, early stopping, visualization, and Wandb logging.
 
@@ -27,6 +27,7 @@ class NeRFTrainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.wandb_run = wandb_run
+        self.obj_name = obj_name
 
     def train_step(self, x, d, z_vals, target_rgb):
         """
@@ -129,7 +130,7 @@ class NeRFTrainer:
                 patience_counter = 0
                 best_val_loss = val_loss
                 # Save model checkpoint with timestamp
-                torch.save(self.model.state_dict(), f"models/model_epoch_{epoch+1}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pt")
+                torch.save(self.model.state_dict(), f"models/{self.obj_name}_epoch_{epoch+1}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pt")
             else:
                 patience_counter += 1
                 if patience_counter >= early_stopping_patience:

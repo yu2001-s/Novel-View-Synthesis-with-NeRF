@@ -1,4 +1,12 @@
+import json
+import os
+import numpy as np
+import json
+from PIL import Image
+from sympy import N, im, root
 import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
 
 def get_rays(image, camera_pos, camera_rot, focal_length):
     """
@@ -38,7 +46,6 @@ def get_rays(image, camera_pos, camera_rot, focal_length):
     rays_o = camera_pos.expand(H * W, -1) # shape [H * W, 3]
 
     return rays_o, rays_d
-
 
 
 def sample_points(rays_o, rays_d, N_samples):
@@ -88,6 +95,7 @@ def sample_points(rays_o, rays_d, N_samples):
     points = rays_o + rays_d * z_vals # shape [H * W, N_samples, 3]
 
     return points, z_vals
+
 
 def dir_to_euler(ray_d):
     """
@@ -155,3 +163,112 @@ def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
 
     return rendered_rgb
     
+
+def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=64):
+    """
+
+    preprocess the data
+
+    Args:
+            obj_name (str): Name of the object.
+            root_dir (str): Root directory of the dataset.
+            img_size (int, optional): Size of the image. Defaults to 400.
+            min_max (torch.Tensor, optional): Min and max values of the locations. Defaults to None.
+            num_points (int, optional): Number of points to sample along each ray. Defaults to 64.
+        
+    """
+    data_folder = os.path.join(root_dir, "data", "nerf_synthetic", obj_name)
+    splits = ['train', 'val', 'test']
+    min_max = None
+    for split in splits:
+        json_file = os.path.join(data_folder, f"transforms_{split}.json")
+        with open(json_file) as f:
+            data = json.load(f)
+        transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+        ])
+        camera_angle_x = data['camera_angle_x']
+        camera_angle_x = torch.tensor(camera_angle_x, dtype=torch.float32)
+        focal_length = 0.5 * img_size / torch.tan(0.5 * camera_angle_x)
+
+        images = []
+        transform_matrices = []
+
+        for frame in data['frames']:
+            img_path = frame['file_path'][2:] + ".png"
+            img_path = os.path.join(data_folder, img_path)       
+            image = Image.open(img_path)
+            image = transforms.ToTensor()(image)[:3]
+            images.append(image)
+
+            transform_matrix = torch.tensor(frame['transform_matrix'])
+            transform_matrices.append(transform_matrix)
+        
+        images = torch.stack(images)
+        images = transform(images)
+
+        transform_matrices = torch.stack(transform_matrices)
+        rotations = transform_matrices[:, :3, :3]
+        locations = transform_matrices[:, :3, 3].view(-1, 3)
+
+        if split == 'train':
+            min_max = torch.zeros((2, 3))
+            min_max[0] = torch.min(locations, dim=0)[0]
+            min_max[1] = torch.max(locations, dim=0)[0]
+
+        #normalize x, y, z to [-1, 1]
+        locations = (locations - min_max[0]) / (min_max[1] - min_max[0]) * 2 - 1
+
+        num_frames = images.shape[0]
+
+        file_counter = 0
+        for i in range(num_frames):
+            rays_o, rays_d = get_rays(images[i], locations[i], rotations[i], focal_length) # [H * W, 3]
+            points, z_vals = sample_points(rays_o, rays_d, num_points) # [H * W, N_samples, 3], [H * W, N_samples, 1]
+            v_dir = dir_to_euler(rays_d) # [H * W, 2]
+            current_img = images[i].permute(1, 2, 0).view(-1, 3) # [H * W, 3]
+
+            # save the data
+            out_path = os.path.join(root_dir, "syn_processed", obj_name, split)
+            #if the directory does not exist, create it
+            if not os.path.exists(out_path):
+                os.makedirs(out_path)
+
+            #each file contains data for 1024 rays, if remain rays are less than 1024, save them in one file
+            counter = -1
+            while counter < rays_o.shape[0]:
+                if counter + 1024 < rays_o.shape[0]:
+                    rays_o_ = rays_o[counter: counter + 1024]
+                    rays_d_ = rays_d[counter: counter + 1024]
+                    points_ = points[counter: counter + 1024]
+                    z_vals_ = z_vals[counter: counter + 1024]
+                    v_dir_ = v_dir[counter: counter + 1024]``
+                    current_img_ = current_img[counter: counter + 1024]
+                    counter += 1024
+                else:
+                    rays_o_ = rays_o[counter:]
+                    rays_d_ = rays_d[counter:]
+                    points_ = points[counter:]
+                    z_vals_ = z_vals[counter:]
+                    v_dir_ = v_dir[counter:]
+                    current_img_ = current_img[counter:]
+                    counter += 1024
+
+                data = {
+                    'rays_o': rays_o_,
+                    'rays_d': rays_d_,
+                    'points': points_,
+                    'z_vals': z_vals_,
+                    'v_dir': v_dir_,
+                    'current_img': current_img_
+                }
+                torch.save(data, os.path.join(out_path, f'{file_counter}.pt'))
+                file_counter += 1
+
+        
+
+            
+
+
+
+
