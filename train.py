@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import wandb
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -25,8 +26,8 @@ torch.manual_seed(seed)
 # Set hyperparameters
 SCALEDOWN = 2
 OBJ_NAME = 'chair'
-BATCH_SIZE = 32
-NUM_WORKERS = 4
+BATCH_SIZE = 2048*2
+NUM_WORKERS = 8
 SAMPLE = 32 
 D = 6
 W = 128
@@ -45,13 +46,13 @@ sys.path.append(P_PATH)
 
 
 # Load data
-train_dataset = SynDataset(obj_name=OBJ_NAME, root_dir=P_PATH, split='train', img_size=img_size, num_points=SAMPLE)
-train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
+train_dataset = SynDatasetRay(obj_name=OBJ_NAME, root_dir=P_PATH, split='train', img_size=img_size, num_points=SAMPLE)
+train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
 
 min_max = train_dataset.min_max
 
-val_dataset = SynDataset(obj_name=OBJ_NAME, root_dir=P_PATH, split='val', img_size=img_size, num_points=SAMPLE, min_max=min_max)
-val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
+val_dataset = SynDatasetRay(obj_name=OBJ_NAME, root_dir=P_PATH, split='val', img_size=img_size, num_points=SAMPLE, min_max=min_max)
+val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
 
 # Initialize model
 
@@ -74,11 +75,13 @@ wandb.init(project="nerf",
 model = NeRF(D=D, W=W, input_ch_pos=input_ch_pos, input_ch_dir=input_ch_dir, skips=skips, L_p=L_p, L_v=L_v).to(device)
 model = model.to(device)
 
+wandb.watch(model, log="all")
+
 
 # Initialize optimizer and learning rate scheduler
 optimizer = optim.Adam(model.parameters(), lr=lr)
-#set learning rate scheduler to not decay
-lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=100000, gamma=1.0)
+#set learning rate scheduler to adapive
+lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10)
 
 # Set loss function
 loss_fn = nn.MSELoss()

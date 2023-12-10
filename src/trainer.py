@@ -28,6 +28,7 @@ class NeRFTrainer:
         self.val_loader = val_loader
         self.wandb_run = wandb_run
         self.obj_name = obj_name
+        self.total_iterations = 0
 
     def train_step(self, x, d, z_vals, target_rgb):
         """
@@ -53,6 +54,11 @@ class NeRFTrainer:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+
+            self.total_iterations += 1
+            if self.total_iterations % 1000 == 0 and self.wandb_run:
+                wandb.log({"iteration": self.total_iterations, "iter_loss": loss.item()})
+
 
             return loss.item()
         except Exception as e:

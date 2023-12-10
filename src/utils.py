@@ -164,7 +164,7 @@ def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
     return rendered_rgb
     
 
-def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=64):
+def data_preprocess(obj_name, root_dir, img_size=400, num_points=64, batch_size=2048):
     """
 
     preprocess the data
@@ -173,7 +173,6 @@ def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=6
             obj_name (str): Name of the object.
             root_dir (str): Root directory of the dataset.
             img_size (int, optional): Size of the image. Defaults to 400.
-            min_max (torch.Tensor, optional): Min and max values of the locations. Defaults to None.
             num_points (int, optional): Number of points to sample along each ray. Defaults to 64.
         
     """
@@ -222,6 +221,8 @@ def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=6
         num_frames = images.shape[0]
 
         file_counter = 0
+
+
         for i in range(num_frames):
             rays_o, rays_d = get_rays(images[i], locations[i], rotations[i], focal_length) # [H * W, 3]
             points, z_vals = sample_points(rays_o, rays_d, num_points) # [H * W, N_samples, 3], [H * W, N_samples, 1]
@@ -229,22 +230,22 @@ def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=6
             current_img = images[i].permute(1, 2, 0).view(-1, 3) # [H * W, 3]
 
             # save the data
-            out_path = os.path.join(root_dir, "syn_processed", obj_name, split)
+            out_path = os.path.join(root_dir, 'data', "syn_processed", obj_name, split)
             #if the directory does not exist, create it
             if not os.path.exists(out_path):
                 os.makedirs(out_path)
 
-            #each file contains data for 1024 rays, if remain rays are less than 1024, save them in one file
-            counter = -1
+            #each file contains data for batch_size rays, if remain rays are less than batch_size, save them in one file
+            counter = 0
             while counter < rays_o.shape[0]:
-                if counter + 1024 < rays_o.shape[0]:
-                    rays_o_ = rays_o[counter: counter + 1024]
-                    rays_d_ = rays_d[counter: counter + 1024]
-                    points_ = points[counter: counter + 1024]
-                    z_vals_ = z_vals[counter: counter + 1024]
-                    v_dir_ = v_dir[counter: counter + 1024]``
-                    current_img_ = current_img[counter: counter + 1024]
-                    counter += 1024
+                if counter + batch_size <= rays_o.shape[0]:
+                    rays_o_ = rays_o[counter: counter + batch_size]
+                    rays_d_ = rays_d[counter: counter + batch_size]
+                    points_ = points[counter: counter + batch_size]
+                    z_vals_ = z_vals[counter: counter + batch_size]
+                    v_dir_ = v_dir[counter: counter + batch_size]
+                    current_img_ = current_img[counter: counter + batch_size]
+                    counter += batch_size
                 else:
                     rays_o_ = rays_o[counter:]
                     rays_d_ = rays_d[counter:]
@@ -252,23 +253,19 @@ def data_preprocess(obj_name, root_dir, img_size=400, min_max=None, num_points=6
                     z_vals_ = z_vals[counter:]
                     v_dir_ = v_dir[counter:]
                     current_img_ = current_img[counter:]
-                    counter += 1024
+                    counter += batch_size
 
                 data = {
-                    'rays_o': rays_o_,
-                    'rays_d': rays_d_,
-                    'points': points_,
-                    'z_vals': z_vals_,
-                    'v_dir': v_dir_,
-                    'current_img': current_img_
+                    'rays_o': rays_o_.clone(),
+                    'rays_d': rays_d_.clone(),
+                    'points': points_.clone(),
+                    'z_vals': z_vals_.clone(),
+                    'v_dir': v_dir_.clone(),
+                    'rgb': current_img_.clone()
                 }
+    
                 torch.save(data, os.path.join(out_path, f'{file_counter}.pt'))
                 file_counter += 1
-
-        
-
-            
-
 
 
 
