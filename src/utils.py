@@ -112,8 +112,6 @@ def dir_to_euler(ray_d):
     return torch.stack([theta, phi], dim=1)  # shape: [H * W, 2]
     
 
-import torch
-
 def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
     """
     Volume rendering function for NeRF.
@@ -127,10 +125,17 @@ def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
     Returns:
         torch.Tensor: Rendered colors for each ray. Shape: [num_rays, 3]
     """
+    # print('z_vals', z_vals.shape)
+    # print('rgb', rgb.shape)
+    # print('sigma', sigma.shape)
+    # print()
+
+
+    device = z_vals.device
     # Calculate distances between adjacent samples along the ray
     deltas = z_vals[:, 1:] - z_vals[:, :-1]
     # The last delta is infinity
-    delta_inf = torch.Tensor([1e10]).expand_as(deltas[:, :1])  # Very large value
+    delta_inf = torch.Tensor([1e10]).expand_as(deltas[:, :1]).to(device)  # Very large value
     deltas = torch.cat([deltas, delta_inf], -1)
 
     # Calculate the alpha value for each sample point

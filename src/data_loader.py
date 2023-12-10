@@ -228,10 +228,10 @@ class SynDatasetRay(Dataset):
         sample = {
             'rays_o': self.rays_o[ray_idx], #shape: [3]
             'rays_d': self.rays_d[ray_idx], #shape: [3]
-            'points': self.points[ray_idx],
-            'z_vals': self.z_vals[ray_idx],
-            'v_dir': self.v_dir[ray_idx],
-            'img': self.current_img[ray_idx]
+            'points': self.points[ray_idx], #shape: [N_samples, 3]
+            'z_vals': self.z_vals[ray_idx], #shape: [N_samples, 1]
+            'v_dir': self.v_dir[ray_idx], #shape: [2]
+            'rgb': self.current_img[ray_idx] #shape: [3]
         }
 
         return sample

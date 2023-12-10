@@ -136,25 +136,37 @@ class NeRF(nn.Module):
         # Position encoding for points and directions
         x_encoded, d_encoded = position_encoding(x, d, self.L_p, self.L_v)
 
+        # print("Encoded position shape:", x_encoded.shape)
+        # print("Encoded direction shape:", d_encoded.shape)
+
+        N_samples = x_encoded.shape[1]  # Number of samples
+
         # Flatten the encoded inputs for processing in fully connected layers
         x_encoded = x_encoded.view(-1, x_encoded.shape[-1]) # [B * N_samples, 3 * 2 * L_p]
-        d_encoded = d_encoded.view(-1, d_encoded.shape[-1]) # [B, 2 * 2 * L_v]
+        d_encoded = d_encoded.view(-1, d_encoded.shape[-1]).unsqueeze(1).repeat(1, N_samples, 1).view(-1, d_encoded.shape[-1]) # [B * N_samples, 2 * 2 * L_v]
+        
+
+        input_x_encoded = x_encoded # [B * N_samples, 3 * 2 * L_p]
 
         # Position encoding layers
         for i, layer in enumerate(self.fc_pos):
             x_encoded = F.relu(layer(x_encoded)) # [B * N_samples, W]
+            # print(f"Shape after layer {i}:", x_encoded.shape)
             if i in self.skips:
-                x_encoded = torch.cat([x_encoded, x_encoded], -1) # [B * N_samples, W + 3 * 2 * L_p]
+                x_encoded = torch.cat([x_encoded, input_x_encoded], -1) # [B * N_samples, W + 3 * 2 * L_p]
+                # print(f"Shape after skip connection {i}:", x_encoded.shape)
 
         # Output density and feature vector
         sigma = F.relu(self.fc_sigma(x_encoded)) # [B * N_samples, 1]
         feature = self.fc_feature(x_encoded) # [B * N_samples, W]
 
         # View direction layers
+        # print("Shape of feature vector:", feature.shape)
+        # print("Shape of direction vector:", d_encoded.shape)
         d_encoded = torch.cat([feature, d_encoded], -1) # [B * N_samples, W + encoded_dir_dims]
         d_encoded = F.relu(self.fc_dir(d_encoded)) # [B * N_samples, W//2]
 
         # RGB color
         rgb = torch.sigmoid(self.fc_rgb(d_encoded))
 
-        return rgb, sigma
+        return rgb.view(-1, N_samples, 3), sigma.view(-1, N_samples)
