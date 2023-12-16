@@ -164,7 +164,7 @@ def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
     return rendered_rgb
     
 
-def data_preprocess(obj_name, root_dir, img_size=400, num_points=64, batch_size=2048):
+def data_preprocess(obj_name, root_dir, img_size=400, num_points=32, batch_size=2048*2):
     """
 
     preprocess the data

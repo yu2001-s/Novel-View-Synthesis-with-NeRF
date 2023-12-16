@@ -90,16 +90,18 @@ class NeRFTrainer:
 
                 # Calculate the loss using the rendered RGB and the target RGB
                 loss = self.loss_fn(rendered_rgb, target_rgb)
+                
                 total_loss += loss.item()
 
         # Clearing the CUDA cache after validation can help with memory management,
         # but might not be necessary. Use it if you face memory issues.
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         average_loss = total_loss / len(self.val_loader)
+
         return average_loss
 
-    def train(self, epochs, log_interval=100, early_stopping_patience=5):
+    def train(self, epochs, log_interval=1, early_stopping_patience=5):
         """
         Train the model for a specified number of epochs with validation, checkpoint saving, early stopping, and logging.
 
@@ -130,7 +132,7 @@ class NeRFTrainer:
             # Validation and early stopping
             val_loss = self.validate()
             if self.wandb_run:
-                wandb.log({"epoch": epoch, "train_loss": total_train_loss / len(self.train_loader), "val_loss": val_loss})
+                wandb.log({"epoch": epoch, "train_loss": total_train_loss / len(self.train_loader), "val_loss": val_loss, "learing rate": self.optimizer.param_groups[0]['lr']})
 
             if val_loss < best_val_loss:
                 patience_counter = 0
@@ -144,6 +146,6 @@ class NeRFTrainer:
                     break
 
             # Update learning rate and log progress
-            self.lr_scheduler.step()
+            self.lr_scheduler.step(val_loss)
             if epoch % log_interval == 0:
                 print(f"Epoch {epoch+1}/{epochs} | Train Loss: {total_train_loss / len(self.train_loader):.4f} | Val Loss: {val_loss:.4f}")

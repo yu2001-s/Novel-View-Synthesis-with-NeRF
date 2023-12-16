@@ -150,7 +150,7 @@ class NeRF(nn.Module):
 
         # Position encoding layers
         for i, layer in enumerate(self.fc_pos):
-            x_encoded = F.relu(layer(x_encoded)) # [B * N_samples, W]
+            x_encoded = F.relu(layer(x_encoded)) # [B * N_samples, 3 * 2 * L_p]
             # print(f"Shape after layer {i}:", x_encoded.shape)
             if i in self.skips:
                 x_encoded = torch.cat([x_encoded, input_x_encoded], -1) # [B * N_samples, W + 3 * 2 * L_p]

@@ -1,5 +1,7 @@
 # Script for training the NeRF model.
 import os
+from pickle import TRUE
+from random import shuffle
 import sys
 import time
 import torch
@@ -29,13 +31,13 @@ OBJ_NAME = 'chair'
 BATCH_SIZE = 2048*2
 NUM_WORKERS = 8
 SAMPLE = 32 
-D = 6
+D = 8
 W = 128
 input_ch_pos = 3
 input_ch_dir = 2
 L_p = 10
 L_v = 4
-skips = [3]
+skips = [4]
 lr = 1e-3
 
 img_size = int(800/SCALEDOWN)
@@ -81,10 +83,10 @@ wandb.watch(model, log="all")
 # Initialize optimizer and learning rate scheduler
 optimizer = optim.Adam(model.parameters(), lr=lr)
 #set learning rate scheduler to adapive
-lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10)
+lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=20)
 
 # Set loss function
-loss_fn = nn.MSELoss()
+loss_fn = nn.MSELoss(reduction='mean')
 
 # Initialize trainer
 trainer = NeRFTrainer(model=model, optimizer=optimizer, 
@@ -93,5 +95,5 @@ trainer = NeRFTrainer(model=model, optimizer=optimizer,
                       device=device, wandb_run=True)
 
 # Train model
-trainer.train(epochs=100, log_interval=1, early_stopping_patience=5)
+trainer.train(epochs=200, log_interval=1, early_stopping_patience=50)
 wandb.finish()
