@@ -225,6 +225,7 @@ class NeRFTrainerV2:
         """
         self.model.eval()
         total_loss = 0
+        valid_batches = 0
         with torch.no_grad():
             for data in self.val_loader:
                 # Unpack the data from the dataset
@@ -244,21 +245,22 @@ class NeRFTrainerV2:
 
                 # Perform volume rendering using the outputs from the model
                 rendered_rgb = volume_rendering(z_vals, rgb, sigma, white_bkgd=False)
-
+                if torch.isnan(rendered_rgb).any():
+                    print("NaN detected in rendered RGB")
+                    continue
                 # Calculate the loss using the rendered RGB and the target RGB
                 loss = self.loss_fn(rendered_rgb, target_rgb)
-                #print shape of target_rgb and rendered_rgb if loss is nan
-                # if torch.isnan(loss):
-                #     print('target_rgb', target_rgb.shape)
-                #     print('rendered_rgb', rendered_rgb.shape)
-                
+                if torch.isnan(loss):
+                    print("NaN detected in loss")
+                    continue
                 total_loss += loss.item()
+                valid_batches += 1
 
         # Clearing the CUDA cache after validation can help with memory management,
         # but might not be necessary. Use it if you face memory issues.
         # torch.cuda.empty_cache()
 
-        average_loss = total_loss / len(self.val_loader)
+        average_loss = total_loss / valid_batches
 
         return average_loss
 

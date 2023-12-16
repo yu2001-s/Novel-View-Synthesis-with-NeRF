@@ -145,8 +145,14 @@ def volume_rendering(z_vals, rgb, sigma, white_bkgd=False):
     delta_inf = torch.Tensor([1e10]).expand_as(deltas[:, :1]).to(device)  # Very large value
     deltas = torch.cat([deltas, delta_inf], -1)
 
+    # Safeguard against extremely large sigma values
+    sigma = torch.clamp(sigma, max=1e6)
+
     # Calculate the alpha value for each sample point
     alpha = 1.0 - torch.exp(-sigma * deltas)
+    # Adding epsilon to avoid NaN in alpha
+    alpha = torch.clamp(alpha, min=1e-10, max=1.0)
+
     T = torch.cumprod(1.0 - alpha + 1e-10, -1)[:, :-1]
     T = torch.cat([torch.ones_like(T[:, :1]), T], -1)  # [num_rays, num_samples]
 

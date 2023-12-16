@@ -54,7 +54,7 @@ train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True
 min_max = train_dataset.min_max
 
 val_dataset = SynDatasetRayV2(obj_name=OBJ_NAME, root_dir=P_PATH, split='val', img_size=img_size, num_points=SAMPLE, min_max=min_max)
-val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE*2, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
+val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
 
 # Initialize model
 
