@@ -19,7 +19,7 @@ def get_rays(image, camera_pos, camera_rot, focal_length):
         focal_length: Focal length of the camera.
 
     Returns:
-        rays_o (ray origins), rays_d (ray directions) [H * W, 3]
+        rays_o (ray origins), rays_d (ray directions, normalized) [H * W, 3]
     """
     C, H, W = image.shape  # image is a PyTorch tensor of shape [C, H, W]
 
@@ -53,46 +53,45 @@ def sample_points(rays_o, rays_d, N_samples):
     Sample points along the rays within a normalized bounding volume.
 
     Args:
-        rays_o: Ray origins. Shape: [H * W, 3]
-        rays_d: Ray directions. Shape: [H * W, 3]
+        rays_o: Ray origins. Shape: [B, 3]
+        rays_d: Ray directions. Shape: [B, 3]
         N_samples: Number of samples to take along each ray.
 
     Returns:
-        Sampled points and their corresponding depths (z values)
+        torch.Tensor: Sampled points. Shape: [B, N_samples, 3]
+        torch.Tensor: Sampled depths. Shape: [B, N_samples, 1]
     """
     # find length of each ray
     # find -1 or 1 for each ray by comparing the sign of the ray direction
     # if the ray direction is negative, we want to go to -1, else 1
 
     # find the sign of the ray direction
-    signs = torch.sign(rays_d)  # shape: [H * W, 3]
-    bounds = torch.where(signs < 0, -1, 1)  # shape: [H * W, 3]
+    signs = torch.sign(rays_d)  # shape: [B, 3]
+    bounds = torch.where(signs < 0, -1, 1)  # shape: [B, 3]
 
     # find the length
     lengths = (bounds - rays_o) / (rays_d)
     lengths = torch.where(torch.abs(rays_d) > 1e-6, lengths, float('inf'))  # handle division by zero
 
-    lengths = torch.min(lengths, dim=1)[0]  # shape: [H * W]
+    lengths = torch.min(lengths, dim=1)[0]  # shape: [B]
 
 
 
     # find the z values and apply stratified sampling
     bin_len = 1.0 / N_samples
-    z_vals = torch.linspace(0 + bin_len / 2, 1 - bin_len / 2, N_samples)  # [N_samples]
-    # print('z_vals', z_vals)
-    # print('bin_len', bin_len)
-    # print()
-    z_vals = torch.ger(lengths, z_vals)  # shape: [H * W, N_samples]
+    z_vals = torch.linspace(0 + bin_len / 2, 1 - bin_len / 2, N_samples, device= lengths.device)  # shape: [N_samples]
+   
+    z_vals = torch.ger(lengths, z_vals)  # shape: [B, N_samples]
     noise = (torch.rand_like(z_vals) - 0.5) * bin_len * 2
     z_vals += noise
 
 
-    rays_o = rays_o.unsqueeze(1).expand(-1, N_samples, 3)  # shape [H * W, N_samples, 3]
-    rays_d = rays_d.unsqueeze(1).expand(-1, N_samples, 3)  # shape [H * W, N_samples, 3]
+    rays_o = rays_o.unsqueeze(1).expand(-1, N_samples, 3)  # shape [B, N_samples, 3]
+    rays_d = rays_d.unsqueeze(1).expand(-1, N_samples, 3)  # shape [B, N_samples, 3]
 
-    z_vals = z_vals.unsqueeze(-1)  # shape [H * W, N_samples, 1]
+    z_vals = z_vals.unsqueeze(-1)  # shape [B N_samples, 1]
 
-    points = rays_o + rays_d * z_vals # shape [H * W, N_samples, 3]
+    points = rays_o + rays_d * z_vals # shape [B, N_samples, 3]
 
     return points, z_vals
 

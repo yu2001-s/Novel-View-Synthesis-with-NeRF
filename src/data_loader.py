@@ -184,7 +184,7 @@ class SynDatasetRay(Dataset):
                                             self.rotations[self.current_frame], 
                                             self.focal_length)
         self.points, self.z_vals = sample_points(self.rays_o, self.rays_d, self.num_points)
-        self.v_dir = dir_to_euler(self.rays_d)
+        # self.v_dir = dir_to_euler(self.rays_d)
         self.current_img = self.images[self.current_frame].permute(1, 2, 0).view(-1, 3) #shape: [H * W, C]
 
 
@@ -224,7 +224,7 @@ class SynDatasetRay(Dataset):
                                                 self.rotations[self.current_frame], 
                                                 self.focal_length)
             self.points, self.z_vals = sample_points(self.rays_o, self.rays_d, self.num_points)
-            self.v_dir = dir_to_euler(self.rays_d)
+            # self.v_dir = dir_to_euler(self.rays_d)
             self.current_img = self.images[self.current_frame].permute(1, 2, 0).view(-1, 3) # Reshape to [H * W, C]
 
             
@@ -234,7 +234,7 @@ class SynDatasetRay(Dataset):
             'rays_d': self.rays_d[ray_idx].clone(), #shape: [3]
             'points': self.points[ray_idx].clone(), #shape: [N_samples, 3]
             'z_vals': self.z_vals[ray_idx].clone(), #shape: [N_samples, 1]
-            'v_dir': self.v_dir[ray_idx].clone(), #shape: [2]
+            'v_dir': self.rays_d[ray_idx].clone(), #shape: [3]
             'rgb': self.current_img[ray_idx].clone() #shape: [3]
         }
 
@@ -242,9 +242,10 @@ class SynDatasetRay(Dataset):
 
 
 
-#batch size unit = rays instead of frames, preprocess all data
+
+#batch size unit = rays instead of frames
 class SynDatasetRayV2(Dataset):
-    def __init__(self, obj_name, root_dir, split='train', img_size=400, num_points=32):
+    def __init__(self, obj_name, root_dir, split='train', img_size=400, min_max=None, num_points=64):
         """
         Dataset class for synthetic data used in Novel View Synthesis with NeRF.
         
@@ -253,31 +254,86 @@ class SynDatasetRayV2(Dataset):
             root_dir (str): Root directory of the dataset.
             split (str, optional): Split of the dataset (train, val, test). Defaults to 'train'.
             img_size (int, optional): Size of the image. Defaults to 400.
-            num_points (int, optional): Number of points to sample along each ray. Defaults to 32.
+            min_max (torch.Tensor, optional): Min and max values of the locations. Defaults to None.
+            num_points (int, optional): Number of points to sample along each ray. Defaults to 64.
         
         """
         assert split in ['train', 'val', 'test'], "Invalid split, options are: train, val, test"
-        data_folder = os.path.join(root_dir, "data/syn_processed", obj_name, split)
-
-        self.length = 0
-        #count number of pt file
-        for file in os.listdir(data_folder):
-            if file.endswith(".pt"):
-                self.length += 1
-        
+        data_folder = os.path.join(root_dir, "data", "nerf_synthetic", obj_name)
+        json_file = os.path.join(data_folder, f"transforms_{split}.json")
+        with open(json_file, 'r') as file:
+            self.data = json.load(file)
         self.root_dir = data_folder
         self.image_size = img_size
         self.num_points = num_points
 
+        self.transform = transforms.Compose([
+            transforms.Resize((img_size, img_size))]
+            )
+        self.camera_angle_x = self.data['camera_angle_x']
+        self.camera_angle_x = torch.tensor(self.camera_angle_x)
+        self.focal_length = 0.5 * img_size / torch.tan(0.5 * self.camera_angle_x)
+        #store all data in tensors
+        self.images = []
+        self.transform_matrices = []
+
+        for frame in self.data['frames']:
+            img_path = frame['file_path'][2:] + '.png'
+            img_path = os.path.join(self.root_dir, img_path,)
+            image = Image.open(img_path)
+            image = transforms.ToTensor()(image)[:3] #shape: (C , img_size, img_size)
+            self.images.append(image)
+
+            # Extract camera parameters
+            transform_matrix = torch.tensor(frame['transform_matrix'])
+            self.transform_matrices.append(transform_matrix)
+
+        self.images = torch.stack(self.images) 
+        self.images = self.transform(self.images)
+
+        self.transform_matrices = torch.stack(self.transform_matrices) #shape: (num_frames, 4, 4)
+        self.rotations = self.transform_matrices[:, :3, :3] #shape: (num_frames, 3, 3)
+        self.locations = self.transform_matrices[:, :3, 3].view(-1, 3) #shape: (num_frames, 3)
+        
+        self.num_frames = self.transform_matrices.shape[0]
+        self.min_max = None
+
+        if split != 'train':
+            self.min_max = min_max
+        else:
+            self.min_max = torch.zeros((2, 3))
+            self.min_max[0] = torch.min(self.locations, dim=0)[0]
+            self.min_max[1] = torch.max(self.locations, dim=0)[0]
+
+        #normalize x, y, z to [-1, 1]
+        self.locations = (self.locations - self.min_max[0]) / (self.min_max[1] - self.min_max[0])*2 - 1
+
+        self.rays_o = []
+        self.rays_d = []
+        for i in range(self.num_frames):
+            rays_o, rays_d = get_rays(self.images[i], 
+                                            self.locations[i], 
+                                            self.rotations[i], 
+                                            self.focal_length)
+            self.rays_o.append(rays_o)
+            self.rays_d.append(rays_d)
+        
+        self.rays_o = torch.stack(self.rays_o).view(-1, 3) #shape: (num_frames * img_size * img_size, 3)
+        self.rays_d = torch.stack(self.rays_d).view(-1, 3) #shape: (num_frames * img_size * img_size, 3)
+
+        self.images = self.images.permute(0, 2, 3, 1).reshape(-1, 3) #shape: (num_frames * img_size * img_size, 3)
+        
+
+
     def __len__(self):
         """
-        Returns the total number of pt files
+        Returns the total number of frames in the dataset.
         
         Returns:
             int: Total number of frames.
         """
-        return self.length
-    
+        return self.num_frames * self.image_size * self.image_size
+
     def __getitem__(self, idx):
         """
         Retrieves the sample at the given index.
@@ -286,25 +342,14 @@ class SynDatasetRayV2(Dataset):
             idx (int): Index of the sample.
         
         Returns:
-            Dict: A dict containing the ray origin, ray direction, sampled points, their corresponding depths (z values), and rgb values.
+            Dict: A dict containing the ray origin, ray direction, and rgb values.
 
         """
-        file_name = os.path.join(self.root_dir, f"{idx}.pt")
-        data = torch.load(file_name)
+    
         sample = {
-            'rays_o': data['rays_o'], #shape: [2048, 3]
-            'rays_d': data['rays_d'], #shape: [2048, 3]
-            'points': data['points'], #shape: [2048, N_samples, 3]
-            'z_vals': data['z_vals'], #shape: [2048, N_samples, 1]
-            'v_dir': data['v_dir'], #shape: [2048, 2]
-            'rgb': data['rgb'] #shape: [2048, 3]
+            'rays_o': self.rays_o[idx].clone(), #shape: [3]
+            'rays_d': self.rays_d[idx].clone(), #shape: [3]
+            'rgb': self.images[idx].clone() #shape: [3]
         }
 
         return sample
-        
-
-        
-
-
-
-    

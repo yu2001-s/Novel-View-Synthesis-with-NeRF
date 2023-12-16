@@ -50,13 +50,13 @@ def position_encoding(points, v_dir, L_p=10, L_v=4):
 
     Args:
         points (torch.Tensor): Sampled points. Shape: [B, N_samples, 3]
-        v_dir (torch.Tensor): View directions. Shape: [B, 2]
+        v_dir (torch.Tensor): View directions. Shape: [B, 3]
         L_p (int): Number of frequency bands for point position encoding. Default is 10.
         L_v (int): Number of frequency bands for view direction encoding. Default is 4.
 
     Returns:
         torch.Tensor: Encoded points. Shape: [B, N_samples, 3 * 2 * L_p]
-        torch.Tensor: Encoded view directions. Shape: [B, 2 * 2 * L_v]
+        torch.Tensor: Encoded view directions. Shape: [B, 3 * 2 * L_v]
     """
     # Frequencies for position encoding
     B = points.shape[0]  # Batch size
@@ -77,14 +77,14 @@ def position_encoding(points, v_dir, L_p=10, L_v=4):
 
     # Position encoding for view directions
     v_dir = v_dir.view(-1, 1) * freqs_v # Shape: [B * 2, L_v]
-    v_dir_encoded = torch.cat([torch.sin(v_dir), torch.cos(v_dir)], dim=-1).view(B, -1)  # Shape: [B, 2 * 2 * L_v]
+    v_dir_encoded = torch.cat([torch.sin(v_dir), torch.cos(v_dir)], dim=-1).view(B, -1)  # Shape: [B, 3 * 2 * L_v]
 
     return points_encoded, v_dir_encoded
 
 
 
 class NeRF(nn.Module):
-    def __init__(self, D=8, W=256, input_ch_pos=3, input_ch_dir=2, L_p=10, L_v=4, skips=[4]):
+    def __init__(self, D=8, W=256, input_ch_pos=3, input_ch_dir=3, L_p=10, L_v=4, skips=[4]):
         """
         NeRF Network with integrated position encoding.
 
@@ -92,7 +92,7 @@ class NeRF(nn.Module):
             D (int): Number of layers (default: 8).
             W (int): Number of neurons in hidden layers (default: 256).
             input_ch_pos (int): Number of input channels for position (default: 3).
-            input_ch_dir (int): Number of input channels for view direction (default: 2).
+            input_ch_dir (int): Number of input channels for view direction (default: 3).
             L_p (int): Number of frequency bands for position encoding.
             L_v (int): Number of frequency bands for view direction encoding.
             skips (list of int): Layers to add skip connections (default: [4]).
@@ -136,9 +136,6 @@ class NeRF(nn.Module):
         # Position encoding for points and directions
         x_encoded, d_encoded = position_encoding(x, d, self.L_p, self.L_v)
 
-        # print("Encoded position shape:", x_encoded.shape)
-        # print("Encoded direction shape:", d_encoded.shape)
-
         N_samples = x_encoded.shape[1]  # Number of samples
 
         # Flatten the encoded inputs for processing in fully connected layers
@@ -151,18 +148,15 @@ class NeRF(nn.Module):
         # Position encoding layers
         for i, layer in enumerate(self.fc_pos):
             x_encoded = F.relu(layer(x_encoded)) # [B * N_samples, 3 * 2 * L_p]
-            # print(f"Shape after layer {i}:", x_encoded.shape)
             if i in self.skips:
                 x_encoded = torch.cat([x_encoded, input_x_encoded], -1) # [B * N_samples, W + 3 * 2 * L_p]
-                # print(f"Shape after skip connection {i}:", x_encoded.shape)
+              
 
         # Output density and feature vector
         sigma = F.relu(self.fc_sigma(x_encoded)) # [B * N_samples, 1]
         feature = self.fc_feature(x_encoded) # [B * N_samples, W]
 
         # View direction layers
-        # print("Shape of feature vector:", feature.shape)
-        # print("Shape of direction vector:", d_encoded.shape)
         d_encoded = torch.cat([feature, d_encoded], -1) # [B * N_samples, W + encoded_dir_dims]
         d_encoded = F.relu(self.fc_dir(d_encoded)) # [B * N_samples, W//2]
 

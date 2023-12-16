@@ -48,13 +48,13 @@ sys.path.append(P_PATH)
 
 
 # Load data
-train_dataset = SynDatasetRay(obj_name=OBJ_NAME, root_dir=P_PATH, split='train', img_size=img_size, num_points=SAMPLE)
-train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
+train_dataset = SynDatasetRayV2(obj_name=OBJ_NAME, root_dir=P_PATH, split='train', img_size=img_size, num_points=SAMPLE)
+train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True)
 
 min_max = train_dataset.min_max
 
-val_dataset = SynDatasetRay(obj_name=OBJ_NAME, root_dir=P_PATH, split='val', img_size=img_size, num_points=SAMPLE, min_max=min_max)
-val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE*16, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
+val_dataset = SynDatasetRayV2(obj_name=OBJ_NAME, root_dir=P_PATH, split='val', img_size=img_size, num_points=SAMPLE, min_max=min_max)
+val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE*2, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True)
 
 # Initialize model
 
@@ -89,10 +89,10 @@ lr_scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=20)
 loss_fn = nn.MSELoss(reduction='mean')
 
 # Initialize trainer
-trainer = NeRFTrainer(model=model, optimizer=optimizer, 
+trainer = NeRFTrainerV2(model=model, optimizer=optimizer, 
                       lr_scheduler=lr_scheduler, loss_fn=loss_fn, 
                       train_loader=train_dataloader, val_loader=val_dataloader, 
-                      device=device, wandb_run=True)
+                      device=device, wandb_run=True, sample_per_ray=SAMPLE)
 
 # Train model
 trainer.train(epochs=200, log_interval=1, early_stopping_patience=50)
